@@ -165,6 +165,7 @@ services:
     - --log-level=warn
     - --log-handle=stderr
     - --telemetry-log-handle=stderr
+    - --p2p-port=1789
     command: []
     healthcheck:
       interval: "1m"
