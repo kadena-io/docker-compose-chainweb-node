@@ -1,0 +1,283 @@
+version: '3.9'
+
+volumes:
+  chainweb-config: {}
+  chainweb-db: {}
+
+services:
+
+  # ########################################################################## #
+  # Database Initialization
+
+  chainweb-initialize-db-sync:
+    container_name: chainweb-initialize-db-sync
+    image: larsk/rsync
+    profiles:
+    - initialize-db
+    volumes:
+    - chainweb-db:/db:rw
+    environment:
+      SERVER: ${DB_SYNC_SERVER:-us-w1.chainweb.com}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+    - |
+      mkdir -p "/db/0"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+
+  # ########################################################################## #
+  chainweb-initialize-db-config:
+    container_name: chainweb-initialize-db-config
+    image: alpine:latest
+    volumes:
+    - chainweb-config:/config:rw
+    entrypoint: ["/bin/sh", "-c"]
+    profiles:
+    - initialize-db
+    command:
+    - |
+      cat > /config/chainweb-initialize-db-config.yaml <<EOF
+      databaseDirectory: /chainweb/db
+      chainweb:
+        onlySyncPact: true
+        validateHashesOnReplay: true
+        p2p:
+          peer:
+            interface: localhost
+            hostaddress:
+              port: 4445
+          private: true
+          ignoreBootstrapNodes: true
+        transactionIndex:
+          enabled: false
+        mempoolP2p:
+          enabled: false
+        cuts:
+          pruneChainDatabase: headers-checked
+      logging:
+        telemetryBackend:
+          enabled: false
+          configuration:
+            color: 'true'
+        backend:
+          color: 'true'
+        filter:
+          rules:
+          - value: mempool
+            key: component
+            level: warn
+          - value: connection-manager
+            key: component
+            level: warn
+          - value: sync
+            key: sub-component
+            level: warn
+          - value: MempoolAccess
+            key: sub-component
+            level: warn
+          - value: PactService
+            key: logger
+            level: warn
+          - value: Checkpointer
+            key: logger
+            level: warn
+          default: info
+      EOF
+
+  # ########################################################################## #
+  chainweb-initialize-db:
+    container_name: chainweb-initialize-db
+    restart: "no"
+    image: ghcr.io/kadena-io/chainweb-node/ubuntu:latest
+    stop_signal: SIGINT
+    profiles:
+    - initialize-db
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    depends_on:
+      chainweb-initialize-db-sync:
+        condition: "service_completed_successfully"
+      chainweb-initialize-db-config:
+        condition: "service_completed_successfully"
+    volumes:
+    - chainweb-db:/chainweb/db:rw
+    - chainweb-config:/config:ro
+    entrypoint:
+    - /chainweb/chainweb-node
+    - +RTS
+    - -T
+    - -H1G
+    - -A64M
+    - -RTS
+    - --config-file=/config/chainweb-initialize-db-config.yaml
+    - --chainweb-version=${NETWORK:-mainnet01}
+    - --log-handle=stderr
+
+  # ########################################################################## #
+  # Chainweb Node
+
+  chainweb-node:
+    container_name: chainweb-node
+    image: ghcr.io/kadena-io/chainweb-node/ubuntu:latest
+    restart: unless-stopped
+    stop_grace_period: "20s"
+    stop_signal: SIGINT
+    ulimits:
+      nofile:
+        hard: 65535
+        soft: 65535
+    ports:
+    - mode: host
+      protocol: tcp
+      published: 1789
+      target: 1789
+    - mode: host
+      protocol: tcp
+      published: 1848
+      target: 1848
+    volumes:
+    - chainweb-db:/chainweb/db:rw
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: "5s"
+        max_attempts: 3
+        window: "120s"
+      update_config:
+        delay: "60s"
+        order: stop-first
+    entrypoint:
+    - /chainweb/chainweb-node
+    - +RTS
+    - -T
+    - -H1G
+    - -A64M
+    - -RTS
+    - --prune-chain-database=none
+    - --database-directory=/chainweb/db
+    - --chainweb-version=${NETWORK:-mainnet01}
+    - --enable-mining-coordination
+    - --mining-public-key=${MINER_KEY:?MINER_KEY environment variable not set}
+    - --log-level=warn
+    - --log-handle=stderr
+    - --telemetry-log-handle=stderr
+    command: []
+    healthcheck:
+      interval: "1m"
+      retries: 3
+      start_period: "30s"
+      test:
+      - CMD
+      - /bin/bash
+      - "-c"
+      - "set -e; while : ; do /bin/bash -c \"$$1\" ; shift || break ; done"
+      - '--'
+      - |
+        # check health endpoint
+        exec 3<>/dev/tcp/localhost/1848
+        printf "GET /health-check HTTP/1.1\r\nhost: http://localhost:1848\r\nConnection: close\r\n\r\n" >&3
+        grep -q "200 OK" <&3 || exit 1
+      timeout: "10s"
+
+  # ########################################################################## #
+  # Stratum Server
+
+  chainweb-stratum-server:
+    container_name: chainweb-stratum-server
+    command:
+    - "--public-key=${MINER_KEY:?MINER_KEY environment variable not set}"
+    - "--node=chainweb-node:1848"
+    - "--worker=stratum"
+    - "--thread-count=2"
+    - "--log-level=info"
+    - "--no-tls"
+    - "--stratum-port=1917"
+    - "--stratum-difficulty=46"
+    depends_on:
+      chainweb-node:
+        condition: service_healthy
+    entrypoint:
+    - /chainweb-mining-client/chainweb-mining-client
+    image: ghcr.io/kadena-io/chainweb-mining-client:latest
+    ports:
+    - protocol: tcp
+      published: 1917
+      target: 1917
+    restart: unless-stopped
+
+  # ########################################################################## #
+  # Container Monitor
+
+  container-monitor:
+    container_name: container-monitor
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: all
+    image: willfarrell/autoheal
+    restart: unless-stopped
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+
+  # ########################################################################## #
+  # DB Server
+
+  chainweb-db-rsync:
+    container_name: chainweb-db-rsync
+    image: larsk/rsync
+    restart: unless-stopped
+    ports:
+    - "873:873"
+    volumes:
+    - chainweb-db:/db:ro
+
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: "5s"
+        max_attempts: 3
+        window: "120s"
+      update_config:
+        delay: "60s"
+        order: stop-first
+
+    entrypoint:
+    - /bin/sh
+    - "-c"
+
+    command:
+    - |
+      cat > /etc/rsyncd.conf <<EOF
+      [db]
+      use chroot = yes
+      path = /db
+      comment = Chainweb Database
+      read only = yes
+      list = yes
+      max connections = 2
+      EOF
+      exec rsync --daemon --no-detach --dparam=pidfile=/var/run/rsyncd.pid
+
+    healthcheck:
+      interval: "1m"
+      retries: 3
+      start_period: "5s"
+      test: |
+        PID=$$(cat /var/run/rsyncd.pid)
+        [ -n "$${PID}" -a -d "/proc/$${PID}" ] || exit 1
+      timeout: "5s"
+    profiles:
+    - db-server
+
+  # ########################################################################## #
+  # Debugging
+
+  debug:
+    image: alpine:latest
+    entrypoint:
+    - /bin/sh
+    profiles:
+    - debug
+
