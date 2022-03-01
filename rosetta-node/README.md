@@ -1,6 +1,24 @@
 Usage
 =====
 
+Hardware requirements:
+
+* 4 CPU cores,
+* 8GB of RAM, and
+* 256 GB of disk space.
+
+For supporting higher API loads we recommend to use at least 8 CPU cores and
+16GB of RAM.
+
+Networking:
+
+Chainweb node is configured to use port 1789 to communicate with other Chainweb
+nodes.
+
+*The P2P port must be reachable from the internet.*
+
+The HTTP REST API of Chainweb node is available on the host on port 1848.
+
 Initialize Database
 -------------------
 
