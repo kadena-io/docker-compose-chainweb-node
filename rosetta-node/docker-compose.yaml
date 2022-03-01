@@ -1,0 +1,391 @@
+version: '3.9'
+
+# ############################################################################ #
+#
+# Usage
+# =====
+#
+# Initialize Database
+# -------------------
+#
+# ```
+# docker compose run chainweb-initialize-db
+# ```
+#
+# The resulting database is *untrusted*. It is fine for use in testing and
+# non-critical applications.
+#
+# Validate Database
+# -----------------
+#
+# For production applications it is highly recommended to validate the database
+# after initialization.
+#
+# ```
+# docker compose run chainweb-validate-db-sync
+# docker compose run chainweb-validate-db
+# ```
+#
+# The first command can be skipped if the database has been initialized already.
+#
+# The second command can take several hours depending on available hardware.
+# Currently, it takes about 6 hours on a cloud VM with eight CPU cores and eight
+# GB of RAM. Adding more CPU cores will speed up the process.
+#
+# Run Chainweb Node
+# -----------------
+#
+# Prerequisite: an initialized and possibly validated database.
+#
+# ```
+# docker compose up -d
+# ```
+#
+# The service API of the node is available on the docker host at port 1848.
+#
+# Options
+# -------
+#
+# By default the node runs in the Kadena mainnet. To run a node in the Kadena
+# testnet define the `KADENA_NETWORK` variable in an `.env` file:
+#
+# ```
+# cat >> .env <<EOF
+# KADENA_NETWORK=testnet04
+# ```
+#
+# Database synchronization takes less time when the the database is synchronized
+# from a geographically close location, ideally, in the same data center:
+#
+# ```
+# cat >> .env <<EOF
+# DB_SYNC_SERVER=INSERT_IP_ADDRESS_OR_DOMAIN_NAME_OF_NODE
+# ```
+#
+# If you have already a node running to you can make its database available for
+# remote synchronization as follows:
+#
+# ```
+# docker compose up -d chainweb-db-rsync
+# ```
+
+volumes:
+  chainweb-config: {}
+  chainweb-db: {}
+
+services:
+
+  # ########################################################################## #
+  # Database Initialization
+
+  chainweb-initialize-db:
+    container_name: chainweb-initialize-db
+    image: larsk/rsync
+    profiles:
+    - initialize-db
+    volumes:
+    - chainweb-db:/db:rw
+    environment:
+      KADENA_NETWORK: ${KADENA_NETWORK:-mainnet01}
+      SERVER: ${DB_SYNC_SERVER}
+    entrypoint: "/bin/sh"
+    command:
+    - "-c"
+    - |
+      case "$$KADENA_NETWORK" in
+        mainnet01)
+          echo "SERVER=$${SERVER:=us-w1.chainweb.com}"
+          ;;
+        testnet04)
+          echo "SERVER=$${SERVER:=us1.testnet.chainweb.com}"
+          ;;
+        *)
+          echo "unknown or unsupported chainweb version: $$KADENA_NETWORK" 1>&2
+          exit 1
+      esac
+
+      mkdir -p "/db/0"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 ; do
+        rsync -avz --delete "rsync://$${SERVER}/db/0/sqlite/pact-v1-chain-$${i}.*" "/db/0/sqlite/"
+        rsync -avz --delete "rsync://$${SERVER}/db/0/sqlite/pact-v1-chain-$${i}.*" "/db/0/sqlite/"
+        rsync -avz --delete "rsync://$${SERVER}/db/0/sqlite/pact-v1-chain-$${i}.*" "/db/0/sqlite/"
+        rsync -avz --delete "rsync://$${SERVER}/db/0/sqlite/pact-v1-chain-$${i}.*" "/db/0/sqlite/"
+      done
+
+  # ########################################################################## #
+  # Database Validation
+
+  # Optional (can be used instead of chainweb-db-initialize
+  # Shut down chainweb-node before running this.
+  chainweb-valiate-db-sync:
+    container_name: chainweb-validate-db-sync
+    image: larsk/rsync
+    profiles:
+    - validate-db
+    volumes:
+    - chainweb-db:/db:rw
+    environment:
+      KADENA_NETWORK: ${KADENA_NETWORK:-mainnet01}
+      SERVER: ${DB_SYNC_SERVER}
+    entrypoint: "/bin/sh"
+    command:
+    - "-c"
+    - |
+      case "$$KADENA_NETWORK" in
+        mainnet01)
+          echo "SERVER=$${SERVER:=us-w1.chainweb.com}"
+          ;;
+        testnet04)
+          echo "SERVER=$${SERVER:=us1.testnet.chainweb.com}"
+          ;;
+        *)
+          echo "unknown or unsupported chainweb version: $$KADENA_NETWORK" 1>&2
+          exit 1
+      esac
+
+      mkdir -p "/db/0"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+      rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
+
+  chainweb-validate-db-config:
+    container_name: chainweb-validate-db-config
+    image: alpine:latest
+    environment:
+      KADENA_NETWORK: ${KADENA_NETWORK:-mainnet01}
+    volumes:
+    - chainweb-config:/config:rw
+    entrypoint: "/bin/sh"
+    profiles:
+    - validate-db
+    command:
+    - "-c"
+    - |
+      cat > /config/chainweb-validate-db-config.yaml <<EOF
+      databaseDirectory: /chainweb/db
+      chainweb:
+        version: ${KADENA_NETWORK}
+        onlySyncPact: true
+        validateHashesOnReplay: true
+        p2p:
+          peer:
+            interface: localhost
+            hostaddress:
+              port: 4445
+          private: true
+          ignoreBootstrapNodes: true
+        transactionIndex:
+          enabled: false
+        mempoolP2p:
+          enabled: false
+        cuts:
+          pruneChainDatabase: headers-checked
+      logging:
+        telemetryBackend:
+          enabled: false
+          configuration:
+            color: 'true'
+        backend:
+          color: 'true'
+        filter:
+          rules:
+          - value: mempool
+            key: component
+            level: warn
+          - value: connection-manager
+            key: component
+            level: warn
+          - value: sync
+            key: sub-component
+            level: warn
+          - value: MempoolAccess
+            key: sub-component
+            level: warn
+          - value: PactService
+            key: logger
+            level: warn
+          - value: Checkpointer
+            key: logger
+            level: warn
+          default: info
+      EOF
+
+  # Shut down chainweb-node before running this.
+  chainweb-validate-db:
+    container_name: chainweb-validate-db
+    restart: "no"
+    image: ghcr.io/kadena-io/chainweb-node/ubuntu:latest
+    environment:
+      KADENA_NETWORK: ${KADENA_NETWORK:-mainnet01}
+    stop_signal: SIGINT
+    profiles:
+    - validate-db
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    depends_on:
+      chainweb-validate-db-config:
+        condition: "service_completed_successfully"
+    volumes:
+    - chainweb-db:/chainweb/db:rw
+    - chainweb-config:/config:ro
+    entrypoint: /bin/bash
+    command:
+    - "-c"
+    - |
+      [ -d "/chainweb/db/0/rocksDb" ] || { echo "missing database. Try running chainweb-validate-db-sync first" 1>&2; exit 1; }
+      rm -rf "/db/0/sqlite/*"
+      /chainweb/chainweb-node \
+        +RTS \
+        -T \
+        -H1G \
+        -A64M \
+        -RTS \
+        --config-file=/config/chainweb-validate-db-config.yaml \
+        --log-handle=stderr
+
+  # ########################################################################## #
+  # Chainweb Node
+
+  chainweb-node:
+    container_name: chainweb-node
+    image: ghcr.io/kadena-io/chainweb-node/ubuntu:latest
+    environment:
+      KADENA_NETWORK: ${KADENA_NETWORK:-mainnet01}
+    restart: unless-stopped
+    stop_grace_period: "20s"
+    stop_signal: SIGINT
+    ulimits:
+      nofile:
+        hard: 65535
+        soft: 65535
+    ports:
+    - mode: host
+      protocol: tcp
+      published: 1789
+      target: 1789
+    - mode: host
+      protocol: tcp
+      published: 1848
+      target: 1848
+    volumes:
+    - chainweb-db:/chainweb/db:rw
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: "5s"
+        max_attempts: 3
+        window: "120s"
+      update_config:
+        delay: "60s"
+        order: stop-first
+    entrypoint:
+    - /chainweb/chainweb-node
+    command:
+    - +RTS
+    - -T
+    - -H1G
+    - -A64M
+    - -RTS
+    - --database-directory=/chainweb/db
+    - --chainweb-version=${KADENA_NETWORK:-mainnet01}
+    - --log-level=warn
+    - --log-handle=stderr
+    - --telemetry-log-handle=stderr
+    - --rosetta
+    - --p2p-port=1789
+    healthcheck:
+      interval: "1m"
+      retries: 3
+      start_period: "30s"
+      test:
+      - CMD
+      - /bin/bash
+      - "-c"
+      - "set -e; while : ; do /bin/bash -c \"$$1\" ; shift || break ; done"
+      - '--'
+      - |
+        # check health endpoint
+        exec 3<>/dev/tcp/localhost/1848
+        printf "GET /health-check HTTP/1.1\r\nhost: http://localhost:1848\r\nConnection: close\r\n\r\n" >&3
+        grep -q "200 OK" <&3 || exit 1
+      timeout: "10s"
+
+  # ########################################################################## #
+  # Container Monitor
+
+  container-monitor:
+    container_name: container-monitor
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: all
+    image: willfarrell/autoheal
+    restart: unless-stopped
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+
+  # ########################################################################## #
+  # DB Server
+
+  chainweb-db-rsync:
+    container_name: chainweb-db-rsync
+    image: larsk/rsync
+    restart: unless-stopped
+    ports:
+    - "873:873"
+    volumes:
+    - chainweb-db:/db:ro
+
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: "5s"
+        max_attempts: 3
+        window: "120s"
+      update_config:
+        delay: "60s"
+        order: stop-first
+
+    entrypoint:
+    - /bin/sh
+    - "-c"
+
+    command:
+    - |
+      cat > /etc/rsyncd.conf <<EOF
+      [db]
+      use chroot = yes
+      path = /db
+      comment = Chainweb Database
+      read only = yes
+      list = yes
+      max connections = 2
+      EOF
+      exec rsync --daemon --no-detach --dparam=pidfile=/var/run/rsyncd.pid
+
+    healthcheck:
+      interval: "1m"
+      retries: 3
+      start_period: "5s"
+      test: |
+        PID=$$(cat /var/run/rsyncd.pid)
+        [ -n "$${PID}" -a -d "/proc/$${PID}" ] || exit 1
+      timeout: "5s"
+    profiles:
+    - db-server
+
+  # ########################################################################## #
+  # Debugging
+
+  debug:
+    image: alpine:latest
+    entrypoint:
+    - /bin/sh
+    profiles:
+    - debug
+
