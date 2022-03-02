@@ -201,11 +201,11 @@ services:
     ports:
     - mode: host
       protocol: tcp
-      published: 1789
+      published: ${P2P_PORT:-1789}
       target: 1789
     - mode: host
       protocol: tcp
-      published: 1848
+      published: ${SERVICE_PORT:-1848}
       target: 1848
     volumes:
     - chainweb-db:/chainweb/db:rw

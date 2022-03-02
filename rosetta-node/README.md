@@ -16,6 +16,7 @@ Chainweb node is configured to use port 1789 to communicate with other Chainweb
 nodes.
 
 *The P2P port must be reachable from the internet.*
+
 This means that it must allow inbound requests from any IP address.
 
 The HTTP REST API of Chainweb node is available on the host on port 1848.
@@ -63,7 +64,7 @@ The service API of the node is available on the docker host at port 1848.
 
 Options
 -------
-By default the P2P port is set to `1789` and the service port is set to `1848`. To change these ports, define the environment variables `P2P_PORT` and `SERVICE_PORT` in an `.env` file. The ports must be different values.
+
 By default the node runs in the Kadena mainnet. To run a node in the Kadena
 testnet define the `KADENA_NETWORK` variable in an `.env` file:
 
@@ -77,7 +78,7 @@ from a geographically close location, ideally, in the same data center:
 
 ```
 cat >> .env <<EOF
-DB_SYNC_SERVER=INSERT_IP_ADDRESS_OR_DOMAIN_NAME_OF_NODE
+DB_SYNC_SERVER=IP_ADDRESS_OR_DOMAIN_NAME_OF_OTHER_NODE
 ```
 
 If you already have a node running to you can make its database available for
@@ -85,5 +86,15 @@ remote synchronization as follows:
 
 ```
 docker compose up -d chainweb-db-rsync
+```
+
+By default the P2P port is set to `1789` and the service port is set to `1848`.
+To change these ports, define the environment variables `P2P_PORT` and
+`SERVICE_PORT` in an `.env` file. The ports must be different values.
+
+```
+cat >> .env <<EOF
+P2P_PORT=MY_P2P_PORT
+SERVICE_PORT=MY_SERVICE_PORT
 ```
 
