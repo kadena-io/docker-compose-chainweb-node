@@ -229,7 +229,7 @@ services:
     - --database-directory=/chainweb/db
     - --chainweb-version=${KADENA_NETWORK:-mainnet01}
     - --log-level=warn
-    - --log-handle=stderr
+    - --log-handle=stdout
     - --telemetry-log-handle=stderr
     - --rosetta
     - --p2p-port=1789
