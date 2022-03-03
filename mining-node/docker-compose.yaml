@@ -18,8 +18,9 @@ services:
     - chainweb-db:/db:rw
     environment:
       SERVER: ${DB_SYNC_SERVER:-us-w1.chainweb.com}
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: "/bin/sh"
     command:
+    - "-c"
     - |
       mkdir -p "/db/0"
       rsync -avz --delete "rsync://$${SERVER}/db/0/rocksDb" "/db/0/"
@@ -33,10 +34,11 @@ services:
     image: alpine:latest
     volumes:
     - chainweb-config:/config:rw
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: "/bin/sh"
     profiles:
     - initialize-db
     command:
+    - "-c"
     - |
       cat > /config/chainweb-initialize-db-config.yaml <<EOF
       databaseDirectory: /chainweb/db
@@ -108,6 +110,7 @@ services:
     - chainweb-config:/config:ro
     entrypoint:
     - /chainweb/chainweb-node
+    command:
     - +RTS
     - -T
     - -H1G
@@ -152,6 +155,7 @@ services:
         order: stop-first
     entrypoint:
     - /chainweb/chainweb-node
+    command:
     - +RTS
     - -T
     - -H1G
