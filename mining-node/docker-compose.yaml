@@ -170,7 +170,6 @@ services:
     - --log-handle=stderr
     - --telemetry-log-handle=stderr
     - --p2p-port=1789
-    command: []
     healthcheck:
       interval: "1m"
       retries: 3
