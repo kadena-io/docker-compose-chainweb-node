@@ -282,6 +282,8 @@ services:
     image: alpine:latest
     entrypoint:
     - /bin/sh
+    volumes:
+    - chainweb-db:/db:ro
     profiles:
     - debug
 

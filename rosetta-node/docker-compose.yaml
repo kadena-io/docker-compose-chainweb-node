@@ -152,7 +152,7 @@ services:
   chainweb-validate-db:
     container_name: chainweb-validate-db
     restart: "no"
-    image: ghcr.io/kadena-io/chainweb-node/ubuntu:latest
+    image: ${IMAGE:-ghcr.io/kadena-io/chainweb-node/ubuntu:latest}
     environment:
       KADENA_NETWORK: ${KADENA_NETWORK:-mainnet01}
     stop_signal: SIGINT
@@ -188,7 +188,7 @@ services:
 
   chainweb-node:
     container_name: chainweb-node
-    image: ghcr.io/kadena-io/chainweb-node/ubuntu:latest
+    image: ${IMAGE:-ghcr.io/kadena-io/chainweb-node/ubuntu:latest}
     environment:
       KADENA_NETWORK: ${KADENA_NETWORK:-mainnet01}
     restart: unless-stopped
@@ -230,7 +230,9 @@ services:
     - --chainweb-version=${KADENA_NETWORK:-mainnet01}
     - --log-level=warn
     - --log-handle=stdout
+    - --log-format=json
     - --telemetry-log-handle=stderr
+    - --telemetry-log-format=json
     - --rosetta
     - --p2p-port=1789
     healthcheck:

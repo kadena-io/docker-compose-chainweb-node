@@ -7,23 +7,25 @@ and on different chains. You should also decide how to store the KDA that you
 are going to mine.
 
 You should also know how to use docker and docker compose and understand the
-basic concepts of containerized applications and services. Installing docker
-and docker compose V2, unfortunately, isn't always trivial on Linux systems.
+basic concepts of containerized applications and services.
 
 # Prerequesites
 
 1.  Setup a machine that is directly reachable from the public internet on
     port 1789. If needed, configure your firewall or NAT router accordingly.
 
-    Database initialization will go faster on a more powerful machine. After
-    that, for normal node operation, 2 to 4 CPU cores and 8GB of RAM are
-    sufficient. Disk size should be at least 120GB, using more will make your
-    node future proof.
+    Database initialization will go faster on a more powerful machine with
+    a fast disk. After that, for normal node operation, 2 to 4 CPU cores and 8GB
+    of RAM are sufficient. Disk size should be at least 240GB, using more will
+    make your node future proof.
 
-2.  Install docker and docker client with support for docker compose V2.
+2.  Install docker and docker client with support for docker compose. Do not use
+    the old docker-compose python program, but the new docker compose plugin
+    (without hyphen between "docker" and "compose"). It is strongly recommended
+    to use the most recent version of docker and compose.
 
     Note that if you run chainweb-node on a cloud VM, it is enough if the docker
-    daemon is installed on the cloud VM and docker compose V2 is installed on a
+    daemon is installed on the cloud VM and docker compose is installed on a
     local client. You can than use the `--host` option of the docker CLI to
     connect and run docker compose commands on the server machine. For instance,
     you could use a container optimized operating system on a cloud VM and use
@@ -44,6 +46,9 @@ docker compose pull
 ```
 
 # Initialize Database Volume
+
+Initializing the database is optional but will speed up the initialization
+process a lot, from several days or weeks to a few hours.
 
 ## Download Chain Database
 
@@ -84,7 +89,7 @@ The command `chainweb-initialize-db` performs two separate tasks:
     finished pruning databases
     ```
 
-2.  Rebuild the pact databases (slqite) for all chains so that the Pact state
+2.  Rebuild the pact databases (sqlite) for all chains so that the Pact state
     for each chain matches the respective block header in latest cut that is
     stored int the chain database (RocksDB).
 
@@ -93,12 +98,13 @@ docker compose --profile initialize-db up -d chainweb-initialize-db
 ```
 
 This command will take a long time to complete. Depending on your hardware it
-can take between 1.5 and 12 hours. Some cloud providers allow you to add and
+can take between 5 and 24 hours. Some cloud providers allow you to add and
 remove RAM and CPU cores for an existing VM. It may help to temporarily add
-cores (ideally more than 20) during this step. Alternatively, you may attach
-the disk to a new VM after initialization is done. In any case, make sure that
-your disk provides enough read IOPS to saturate all available cores. If you find
-that most CPUs are blocked on IO (CPU cores are idle), try to increase disk read
+cores (ideally a few more than 20) during this step. Alternatively, you may
+attach the disk to a new VM after initialization is done. An SSD disk will
+perform much better than an spinning disk. In any case, make sure that your disk
+provides enough read IOPS to saturate all available cores. If you find that most
+CPUs are blocked on IO (CPU cores are idle), try to increase disk read
 performance.
 
 One can use `docker compose logs chainweb-initialize-db` to monitor progress.
@@ -111,9 +117,10 @@ docker compose ps
 ```
 
 At this point you have a Chainweb database that is fully validated and trusted.
-It is stored on a docker volume that is called `chainweb-db`. You should always
-keep up-to-date backup copies of this volume, because recreating it would take
-a long time.
+It is stored on a docker volume that is called `chainweb-db`.
+
+**You should always keep up-to-date backup copies of this volume, because
+recreating it would take a long time.**
 
 # Start Chainweb Node and Stratum Server
 
@@ -128,11 +135,17 @@ docker compose ps
 ```
 
 By default chainweb-node is configured to expose the node mining API on port
-1848. It is strongly recommended to not expose that port publicly. Th stratum
-server is exposed on the host on port 1917 that can be used to mining with an
+1848. It is strongly recommended to not expose that port publicly. The stratum
+server is exposed on the host on port 1917 that can be used for mining with an
 ASIC. Depending on your setup you may have to configure the firewall or NAT so
 that the ASIC miner can connect to port 1917 on the machine where the stratum
 server is running.
+
+You may have to fine tune the parameters for the the stratum-server in the
+`docker-compose.yaml` file. The default values should work for modern ASICs with
+hashrate between 100 and 300 TH/s. Details about configuring and tuning the
+stratum server can be found in the [README of the chainweb-mining-client
+repository](https://github.com/kadena-io/chainweb-mining-client/blob/master/README.md).
 
 # Remarks
 
@@ -149,9 +162,22 @@ it on the host).
 
 # Trouble Shooting
 
+## Container-monitor Interferes with Startup
+
+Sometime chainweb-node initialization on startup takes long than expected. This
+can, for instance, happen when the node was offline for some time and needs to
+catchup with the reset of the network. It can then happen that the internal
+container monitor asseses that chainweb-node is unhealthy and restarts the node
+before it finishes startup. In that case it can be necessary to manually turn of
+the container monitor with the command `docker compose stop container-monitor`.
+Once `docker ps` shows that chainweb-node is healthy the container monitor can
+be restarted with `docker compose up -d container-monitor`.
+
+## Failures During DB Initialization
+
 It sometimes can happen that errors occur during initial database
 synchronization. This results in `chainweb-initialize-db` failing with an error
-message during the validation phase (log message are tagged with
+message during the validation phase (log messages are tagged with
 `sub-component=headers-checked`). This is resolved by deleting the docker volume
 with the database (`chainweb-db`) and start over again.
 
@@ -180,6 +206,6 @@ docker-compose file and change the value of
 from `headers-checked` to `none`. After that `chainweb-initialize-db` will
 resume the validation from the point it failed before.
 
-**In any case** never use a Chainweb database in production if validation didn't
-complete successfully.
+**Never use a Chainweb database in production if validation didn't complete
+successfully.**
 
